@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { usePlayerStore } from './hooks/usePlayerStore';
-import { loadScores, saveScore } from './lib/scoreboard';
+import { loadScores, loadScoresSync, saveScore } from './lib/scoreboard';
 import type { ScoreEntry } from './lib/scoreboard';
 import { LoginScreen } from './components/LoginScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -14,9 +14,14 @@ function App() {
   const store = usePlayerStore();
   const [screen, setScreen] = useState<Screen>('login');
   const [gameKey, setGameKey] = useState(0);
-  const [scores, setScores] = useState<ScoreEntry[]>(loadScores);
+  const [scores, setScores] = useState<ScoreEntry[]>(loadScoresSync);
   const [lastP80, setLastP80] = useState<number | undefined>(undefined);
   const [returnTo, setReturnTo] = useState<Screen>('login');
+
+  // Load shared scores from Firestore on mount
+  useEffect(() => {
+    loadScores().then(setScores);
+  }, []);
 
   const handleSelectPlayer = (id: string) => {
     store.selectPlayer(id);
@@ -44,10 +49,12 @@ function App() {
     setScreen('settings');
   };
 
-  const handleShowScoreboard = useCallback((from: Screen) => {
+  const handleShowScoreboard = useCallback(async (from: Screen) => {
     setReturnTo(from);
-    setScores(loadScores());
     setScreen('scoreboard');
+    // Refresh from Firestore
+    const fresh = await loadScores();
+    setScores(fresh);
   }, []);
 
   const handleCloseScoreboard = useCallback(() => {
@@ -94,7 +101,7 @@ function App() {
       onSaveAdaptive={(state) =>
         store.saveAdaptiveState(store.player!.settings.problemType, state)
       }
-      onSaveResults={(attempts, p80) => {
+      onSaveResults={async (attempts, p80) => {
         store.saveSessionResults(attempts, p80);
         const entry: ScoreEntry = {
           playerName: store.player!.name,
@@ -105,7 +112,7 @@ function App() {
           maxNum: store.player!.settings.maxNum,
           date: new Date().toISOString(),
         };
-        const updated = saveScore(entry);
+        const updated = await saveScore(entry);
         setScores(updated);
         setLastP80(p80);
       }}
